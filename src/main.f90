@@ -1,0 +1,185 @@
+! Common constants
+module constants
+  implicit none
+  ! Double precision
+  integer, parameter :: dp = kind(0.d0)
+  ! Total number of test velocities
+  integer, parameter :: nvel = 100
+  ! Total number of time steps
+  integer, parameter :: nsteps = 1000
+  ! Total amount of time
+  real(dp), parameter :: totaltime = 30.d0
+  ! Time step
+  real(dp), parameter :: tstep = totaltime / nsteps
+  ! Velocity of prey
+  real(dp), parameter :: prey_vel = 1.d0
+  ! Start Distance
+  real(dp), parameter :: start_dist = 10.d0 * prey_vel
+  ! Minimum velocity of predator
+  real(dp), parameter :: min_vel = 1.d0
+  ! Maximum velocity of predator
+  real(dp), parameter :: max_vel = 2.d0
+  ! Distance to catch prey
+  real(dp), parameter :: range = 0.10
+end module constants
+
+! Record trajectories for different velocities
+program main
+  use mpi
+  use constants
+  use parallel_tasks
+  implicit none
+  intrinsic :: cmplx, real, aimag, abs
+  ! Position as time vs velocity
+  complex(dp) :: position(nsteps+1,nvel)
+  ! Time iterator
+  integer :: it
+  ! Velocity iterator
+  integer :: ivel
+  ! Velocities
+  real(dp) :: velocities(nvel)
+  ! Calculate position at each iteration
+  external :: chase
+  ! MPI Error status
+  integer :: ierr
+
+  call mpi_init(ierr)
+
+  ! Find minimum velocity
+  call find_min_vel
+
+  ! Array of test velocities
+  do ivel = 0,nvel-1
+    ! Velocities ranging from 1 to 2
+    velocities(ivel+1) = min_vel + (max_vel-min_vel) * ivel / real(nvel-1, dp)
+  enddo
+
+#ifdef VERBOSE
+  prog_bar = .true.
+#endif
+
+  call task_manager(nvel,1,nsteps+1,velocities,chase,position,ierr)
+
+#ifdef EXPORT
+  ! Export to file
+  open(10, file='t.txt', status='replace')
+  open(11, file='x.txt', status='replace')
+  open(12, file='y.txt', status='replace')
+  open(13, file='data.txt', status='replace')
+  do it=1,nsteps+1
+    write(10,*) (it-1) * tstep
+    write(11,*) real(position(it,:))
+    write(12,*) aimag(position(it,:))
+    do ivel=1,nvel
+      write(13,*) real(position(it,ivel)), aimag(position(it,ivel)), (it-1) * tstep
+    enddo
+  enddo
+  close(10)
+  close(11)
+  close(12)
+  close(13)
+#endif
+
+  call mpi_finalize(ierr)
+end program main
+
+subroutine chase(ndim,velocity,nfun,position)
+  use constants
+  implicit none
+  integer, intent(in) :: ndim, nfun
+  real(dp), intent(in) :: velocity(ndim)
+  complex(dp), intent(out) :: position(nfun)
+  ! Time iterator
+  integer :: it
+  ! Time
+  real(dp) :: time
+  ! Target position
+  complex(dp) :: prey_position
+  ! Difference in positions
+  complex(dp) :: diff
+  
+  position(1) = cmplx(0.d0, start_dist, dp)
+  do it = 1,nsteps
+    ! Find prey
+    time = it * tstep
+    prey_position = cmplx(prey_vel * time, 0.d0, dp)
+    ! Aim towards prey
+    diff = prey_position - position(it)
+    ! Check if within reach
+    if (abs(diff) < velocity(1) * tstep + range) then
+      position(it:nsteps+1) = prey_position
+      exit
+    else
+      ! Move towards prey
+      position(it+1) = position(it) + velocity(1) * tstep * diff / abs(diff)
+    endif
+  enddo
+end subroutine chase
+
+! Converge onto minimum velocity
+subroutine find_min_vel
+  use constants
+  implicit none
+  ! Command line argument
+  character(len=32) :: cmd
+  ! Number of tests
+  integer :: ntest = 1000
+  ! Test iterator
+  integer :: itest
+  ! Current minimum velocity
+  real(dp) :: min = min_vel
+  ! Current maximum velocity
+  real(dp) :: max = max_vel
+  ! Current velocity
+  real(dp) :: velocity
+  ! Predator catches prey test function
+  logical :: will_catch
+
+  ! Read command line argument
+  call get_command_argument(1,cmd)
+  ! Convert to integer
+  if (len_trim(cmd) > 0) read(cmd, *) ntest
+
+  ! Repeat ntest times
+  do itest=1,ntest
+    ! Bisect range
+    velocity = (min + max) * 0.5d0
+    if (will_catch(velocity)) then
+      ! Lower maximum
+      max = velocity
+    else
+      ! Increase minimum
+      min = velocity
+    endif
+    if (abs(min - max) < 5.0e-16) exit
+  enddo
+  print *, velocity
+end subroutine find_min_vel
+
+! Return true if fast enough to catch prey
+logical function will_catch(velocity)
+  use constants
+  implicit none
+  real(dp), intent(in) :: velocity
+  integer :: it
+  real(dp) :: time
+  complex(dp) :: prey_position, position, diff
+
+  will_catch = .false.
+  position = cmplx(0.d0, 10.d0, dp)
+  do it = 1,nsteps
+    ! Find prey
+    time = it * tstep
+    prey_position = cmplx(prey_vel * time, 0.d0, dp)
+    ! Aim towards prey
+    diff = prey_position - position
+    ! Check if within reach
+    if (abs(diff) < velocity * tstep + range) then
+      will_catch = .true.
+      return
+    else
+      ! Move towards prey
+      position = position + velocity * tstep * diff / abs(diff)
+    endif
+  enddo
+end function will_catch
