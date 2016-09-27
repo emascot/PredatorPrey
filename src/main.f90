@@ -66,12 +66,13 @@ program main
   open(11, file='x.txt', status='replace')
   open(12, file='y.txt', status='replace')
   open(13, file='data.txt', status='replace')
+  write(13,*) '  Velocity                  Time                      x                         y'
   do it=1,nsteps+1
     write(10,*) (it-1) * tstep
     write(11,*) real(position(it,:))
     write(12,*) aimag(position(it,:))
     do ivel=1,nvel
-      write(13,*) real(position(it,ivel)), aimag(position(it,ivel)), (it-1) * tstep
+      write(13,*) velocities(ivel), (it-1) * tstep, real(position(it,ivel)), aimag(position(it,ivel))
     enddo
   enddo
   close(10)
