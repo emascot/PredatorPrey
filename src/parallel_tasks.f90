@@ -537,10 +537,6 @@ subroutine check_error(ierr)
   implicit none
   integer :: ierr
   select case (ierr)
-#ifdef VERBOSE
-  case (MPI_SUCCESS)
-    print *, 'MPI_SUCCESS'
-#endif
   case (MPI_ERR_COMM)
     print *, 'MPI_ERR_COMM'
   case (MPI_ERR_TYPE)
