@@ -29,6 +29,8 @@ program main
   use constants
   use parallel_tasks
   implicit none
+  ! Command line argument
+  character(len=32) :: cmd
   ! Granularity
   integer :: nvec = 1
   ! Start, wall, and cpu time
@@ -50,6 +52,11 @@ program main
   call mpi_comm_rank(mpi_comm_world,rank,ierr)
   call mpi_comm_size(mpi_comm_world,size,ierr)
   start = mpi_wtime()
+
+  ! Read command line argument
+  call get_command_argument(1,cmd)
+  ! Convert to integer
+  if (len_trim(cmd) > 0) read(cmd, *) nvec
 
   ! Find minimum velocity
   if (rank.eq.0) write(*,*) 'Minimum Velocity:', find_min_vel()
@@ -135,10 +142,8 @@ end subroutine chase
 real(dp) function find_min_vel()
   use constants
   implicit none
-  ! Command line argument
-  character(len=32) :: cmd
   ! Number of tests
-  integer :: ntest = 1000
+  integer, parameter :: ntest = 1000
   ! Test iterator
   integer :: itest
   ! Current minimum velocity
@@ -149,11 +154,6 @@ real(dp) function find_min_vel()
   real(dp) :: velocity = max_vel
   ! Predator catches prey test function
   logical :: will_catch
-
-  ! Read command line argument
-  call get_command_argument(1,cmd)
-  ! Convert to integer
-  if (len_trim(cmd) > 0) read(cmd, *) ntest
 
   ! Repeat ntest times
   do itest=1,ntest
