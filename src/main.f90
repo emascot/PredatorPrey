@@ -97,8 +97,7 @@ program main
   elapsed = MPI_Wtime() - start
   call MPI_Reduce(elapsed, total, 1, MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
   if (rank.eq.0) then
-    write(*,'(4X,A8,3X,A23,3X,A23)') 'p', 'CPU', 'Wall'
-    write(*,*) size, total, elapsed
+    write(*,*) size, nvec, total, elapsed
   endif
   call mpi_finalize(ierr)
 end program main
