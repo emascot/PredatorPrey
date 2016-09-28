@@ -1,3 +1,8 @@
+#define FUNTYPE real(dp)
+#define RESTYPE complex(dp)
+#define MPIFUNTYPE MPI_REAL8
+#define MPIRESTYPE MPI_DOUBLE_COMPLEX
+
 !> Distribute tasks to processes.
 !> Tasks are an array of real(8) sent to a subroutine.
 !> |option    |description                                |
@@ -61,6 +66,9 @@ module parallel_tasks
   ! true  - Show progress bar
   ! false - Do not show progress
   logical :: prog_bar=.false.
+  ! true  - Broadcast results
+  ! false - Root has results
+  logical :: bcast=.false.
   save
   private
   public :: task_manager, task_divide, task_farm, stream, sequential, prog_bar
@@ -118,16 +126,12 @@ contains
 subroutine task_manager(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   implicit none
   integer, intent(in) :: Ntasks, Nfun, Nres
-  real(dp), intent(in) :: tasks(Nfun,Ntasks)
+  FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
   external :: func
-  complex(dp), intent(out) :: results(Nres,Ntasks)
+  RESTYPE, intent(out) :: results(Nres,Ntasks)
   integer, intent(out) :: ierr
   character(len=*), optional, intent(in) :: fname
   integer :: size
-  real(dp) :: start
-
-  ! Start timer
-  start = MPI_Wtime()
 
   ! Get number of processes
   call MPI_COMM_SIZE(MPI_COMM_WORLD,size,ierr)
@@ -192,9 +196,9 @@ end subroutine task_manager
 subroutine task_farm(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   implicit none
   integer, intent(in) :: Ntasks, Nfun, Nres
-  real(dp), intent(in) :: tasks(Nfun,Ntasks)
+  FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
   external :: func
-  complex(dp), intent(out) :: results(Nres,Ntasks)
+  RESTYPE, intent(out) :: results(Nres,Ntasks)
   integer, intent(out) :: ierr
   character(len=*), optional, intent(in) :: fname
   integer :: size, rank
@@ -218,27 +222,27 @@ subroutine task_farm(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   end if
 
   ! Broadcast results so all processes have same results
-  call MPI_BCAST(results,Ntasks*Nres,MPI_DOUBLE_COMPLEX,0,MPI_COMM_WORLD,ierr)
+  if (bcast) call MPI_BCAST(results,Ntasks*Nres,MPIRESTYPE,0,MPI_COMM_WORLD,ierr)
 
   ! Write to file if present
-  call export(Ntasks,Nfun,Nres,tasks,results,fname)
+  if (present(fname)) call export(Ntasks,Nfun,Nres,tasks,results,fname)
   
 contains
 
   subroutine assign_tasks
     implicit none
     integer :: i, tag, source, status(MPI_STATUS_SIZE)
-    complex(dp) :: buffer(Nres)
+    RESTYPE :: buffer(Nres)
 
     ! Assign processes first task
     do i=1,size-1
-      call MPI_SEND(tasks(:,i), Nfun, MPI_REAL8, i, i, MPI_COMM_WORLD, ierr)
+      call MPI_SEND(tasks(:,i), Nfun, MPIFUNTYPE, i, i, MPI_COMM_WORLD, ierr)
     end do
 
     ! Assign rest of tasks
     do i=size,Ntasks+size-1
       ! Wait for process to finish
-      call MPI_RECV(buffer, Nres, MPI_DOUBLE_COMPLEX, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call MPI_RECV(buffer, Nres, MPIRESTYPE, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
       call check_error(ierr)
       ! Get number of process
       source = status(MPI_SOURCE)
@@ -252,11 +256,11 @@ contains
       if (prog_bar) call progress(real(i-size+1,dp)/real(Ntasks,dp), start)
       if (i .le. Ntasks) then
         ! Send process next task
-        call MPI_SEND(tasks(:,i), Nfun, MPI_REAL8, source, i, MPI_COMM_WORLD, ierr)
+        call MPI_SEND(tasks(:,i), Nfun, MPIFUNTYPE, source, i, MPI_COMM_WORLD, ierr)
         call check_error(ierr)
       else
         ! Send finish signal to process
-        call MPI_SEND(tasks(:,1), Nfun, MPI_REAL8, source, i, MPI_COMM_WORLD, ierr)
+        call MPI_SEND(tasks(:,1), Nfun, MPIFUNTYPE, source, i, MPI_COMM_WORLD, ierr)
         call check_error(ierr)
       end if
     end do
@@ -265,12 +269,12 @@ contains
   subroutine receive_tasks
     implicit none
     integer :: tag, status(MPI_STATUS_SIZE)
-    real(dp) :: task(Nfun)
-    complex(dp) :: result(Nres)
+    FUNTYPE :: task(Nfun)
+    RESTYPE :: result(Nres)
 
     do
       ! Receive task
-      call MPI_RECV(task, Nfun, MPI_REAL8, 0, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call MPI_RECV(task, Nfun, MPIFUNTYPE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
       call check_error(ierr)
       ! Get number of task
       tag = status(MPI_TAG)
@@ -279,7 +283,7 @@ contains
       ! Do task
       call func(Nfun,task,Nres,result)
       ! Send results
-      call MPI_SEND(result, Nres, MPI_DOUBLE_COMPLEX, 0, tag, MPI_COMM_WORLD, ierr)
+      call MPI_SEND(result, Nres, MPIRESTYPE, 0, tag, MPI_COMM_WORLD, ierr)
       call check_error(ierr)
     end do
   end subroutine receive_tasks
@@ -336,14 +340,15 @@ end subroutine task_farm
 subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   implicit none
   integer, intent(in) :: Ntasks, Nfun, Nres
-  real(dp), intent(in) :: tasks(Nfun,Ntasks)
+  FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
   external :: func
-  complex(dp), intent(out) :: results(Nres,Ntasks)
+  RESTYPE, intent(out) :: results(Nres,Ntasks)
   integer, intent(out) :: ierr
   character(len=*), optional, intent(in) :: fname
   integer :: i, j, size, rank, source, status(MPI_STATUS_SIZE)
-  real(dp) :: task(Nfun), start
-  complex(dp) :: result(Nres), buffer(Nres,Ntasks)
+  real(dp) :: start
+  FUNTYPE :: task(Nfun)
+  RESTYPE :: result(Nres), buffer(Nres,Ntasks)
 
   ! Start timer
   start = MPI_Wtime()
@@ -370,7 +375,7 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   if (rank.eq.0) then
     do i=1,size-1
       ! Receive results
-      call MPI_RECV(buffer, Nres*Ntasks, MPI_DOUBLE_COMPLEX, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call MPI_RECV(buffer, Nres*Ntasks, MPIRESTYPE, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
       call check_error(ierr)
       ! Get number of process
       source = status(MPI_SOURCE)
@@ -381,15 +386,15 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
     end do
   else
     ! Send results to root
-    call MPI_SEND(results, Nres*Ntasks, MPI_DOUBLE_COMPLEX, 0, 0, MPI_COMM_WORLD, ierr)
+    call MPI_SEND(results, Nres*Ntasks, MPIRESTYPE, 0, 0, MPI_COMM_WORLD, ierr)
     call check_error(ierr)
   end if
 
   ! Broadcast results so all processes have same results
-  call MPI_BCAST(results,Ntasks*Nres,MPI_DOUBLE_COMPLEX,0,MPI_COMM_WORLD,ierr)
+  if (bcast) call MPI_BCAST(results,Ntasks*Nres,MPIRESTYPE,0,MPI_COMM_WORLD,ierr)
 
   ! Write to file if present
-  call export(Ntasks,Nfun,Nres,tasks,results,fname)
+  if (present(fname)) call export(Ntasks,Nfun,Nres,tasks,results,fname)
 end subroutine task_divide
 
 
@@ -415,8 +420,8 @@ end subroutine task_divide
 
 subroutine seq_write(Nfun,Nres,task,result,fname)
   integer, intent(in) :: Nfun, Nres
-  real(dp), intent(in) :: task(Nfun)
-  complex(dp), intent(in) :: result(Nres)
+  FUNTYPE, intent(in) :: task(Nfun)
+  RESTYPE, intent(in) :: result(Nres)
   character(len=*), optional, intent(in) :: fname
   integer :: rank, ierr
   character(len=64) :: fname_MPI
@@ -439,7 +444,7 @@ subroutine seq_write(Nfun,Nres,task,result,fname)
   else
     ! Write as human readable data
     open(10, file=fname_MPI, access='append')
-      write(10,*) task(:), real(result(:)), aimag(result(:))
+      write(10,*) task(:), result(:)
     close(10)
   end if
 end subroutine seq_write
@@ -468,8 +473,8 @@ end subroutine seq_write
 
 subroutine export(Ntasks,Nfun,Nres,tasks,results,fname)
   integer, intent(in) :: Ntasks, Nfun, Nres
-  real(dp), intent(in) :: tasks(Nfun,Ntasks)
-  complex(dp), intent(in) :: results(Nres,Ntasks)
+  FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
+  RESTYPE, intent(in) :: results(Nres,Ntasks)
   character(len=*), optional, intent(in) :: fname
   integer :: i, rank, ierr
 
@@ -492,7 +497,7 @@ subroutine export(Ntasks,Nfun,Nres,tasks,results,fname)
       ! Write as human readable data
       open(10, file=fname, status='replace')
         do i=1,Ntasks
-          write(10,*) tasks(:,i), real(results(:,i)), aimag(results(:,i))
+          write(10,*) tasks(:,i), results(:,i)
         end do
       close(10)
     end if
