@@ -29,6 +29,8 @@ program main
   use constants
   use parallel_tasks
   implicit none
+  ! Granularity
+  integer :: nvec = 1
   ! Start, wall, and cpu time
   real(dp) :: start, elapsed, total
   ! Find minimum velocity
@@ -62,7 +64,7 @@ program main
   prog_bar = .true.
 #endif
 
-  call task_manager(nvel,1,nsteps+1,velocities,chase,position,ierr)
+  call task_manager(nvel,1,nsteps+1,nvec,velocities,chase,position,ierr)
 
 #ifdef EXPORT
   ! Export to file
@@ -94,14 +96,14 @@ program main
   call mpi_finalize(ierr)
 end program main
 
-subroutine chase(ndim,velocity,nfun,position)
+subroutine chase(ndim,velocities,nfun,positions,nvec)
   use constants
   implicit none
-  integer, intent(in) :: ndim, nfun
-  real(dp), intent(in) :: velocity(ndim)
-  complex(dp), intent(out) :: position(nfun)
-  ! Time iterator
-  integer :: it
+  integer, intent(in) :: ndim, nfun, nvec
+  real(dp), intent(in) :: velocities(ndim,nvec)
+  complex(dp), intent(out) :: positions(nfun,nvec)
+  ! Time and velocity iterators
+  integer :: it, ivel
   ! Time
   real(dp) :: time
   ! Target position
@@ -109,21 +111,23 @@ subroutine chase(ndim,velocity,nfun,position)
   ! Difference in positions
   complex(dp) :: diff
   
-  position(1) = cmplx(0.d0, start_dist, dp)
-  do it = 1,nsteps
-    ! Find prey
-    time = it * tstep
-    prey_position = cmplx(prey_vel * time, 0.d0, dp)
-    ! Aim towards prey
-    diff = prey_position - position(it)
-    ! Check if within reach
-    if (abs(diff) < velocity(1) * tstep + range) then
-      position(it:nsteps+1) = prey_position
-      exit
-    else
-      ! Move towards prey
-      position(it+1) = position(it) + velocity(1) * tstep * diff / abs(diff)
-    endif
+  positions(1,:) = cmplx(0.d0, start_dist, dp)
+  do ivel = 1,ndim
+    do it = 1,nsteps
+      ! Find prey
+      time = it * tstep
+      prey_position = cmplx(prey_vel * time, 0.d0, dp)
+      ! Aim towards prey
+      diff = prey_position - positions(it,ivel)
+      ! Check if within reach
+      if (abs(diff) < velocities(1,ivel) * tstep + range) then
+        positions(it:nsteps+1,ivel) = prey_position
+        exit
+      else
+        ! Move towards prey
+        positions(it+1,ivel) = positions(it,ivel) + velocities(1,ivel) * tstep * diff / abs(diff)
+      endif
+    enddo
   enddo
 end subroutine chase
 
