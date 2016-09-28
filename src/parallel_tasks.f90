@@ -228,17 +228,18 @@ contains
   subroutine assign_tasks
     implicit none
     integer :: i, tag, source, status(MPI_STATUS_SIZE)
-    real(dp) :: buffer(Nres)
+    complex(dp) :: buffer(Nres)
 
     ! Assign processes first task
     do i=1,size-1
-      call MPI_SEND(tasks(:,i), Nfun, MPI_DOUBLE_COMPLEX, i, i, MPI_COMM_WORLD, ierr)
+      call MPI_SEND(tasks(:,i), Nfun, MPI_REAL8, i, i, MPI_COMM_WORLD, ierr)
     end do
 
     ! Assign rest of tasks
     do i=size,Ntasks+size-1
       ! Wait for process to finish
       call MPI_RECV(buffer, Nres, MPI_DOUBLE_COMPLEX, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call check_error(ierr)
       ! Get number of process
       source = status(MPI_SOURCE)
       ! Get number of task
@@ -251,10 +252,12 @@ contains
       if (prog_bar) call progress(real(i-size+1,dp)/real(Ntasks,dp), start)
       if (i .le. Ntasks) then
         ! Send process next task
-        call MPI_SEND(tasks(:,i), Nfun, MPI_DOUBLE_COMPLEX, source, i, MPI_COMM_WORLD, ierr)
+        call MPI_SEND(tasks(:,i), Nfun, MPI_REAL8, source, i, MPI_COMM_WORLD, ierr)
+        call check_error(ierr)
       else
         ! Send finish signal to process
-        call MPI_SEND(tasks(:,1), Nfun, MPI_DOUBLE_COMPLEX, source, i, MPI_COMM_WORLD, ierr)
+        call MPI_SEND(tasks(:,1), Nfun, MPI_REAL8, source, i, MPI_COMM_WORLD, ierr)
+        call check_error(ierr)
       end if
     end do
   end subroutine assign_tasks
@@ -267,7 +270,8 @@ contains
 
     do
       ! Receive task
-      call MPI_RECV(task, Nfun, MPI_DOUBLE_COMPLEX, 0, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call MPI_RECV(task, Nfun, MPI_REAL8, 0, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call check_error(ierr)
       ! Get number of task
       tag = status(MPI_TAG)
       ! Exit if all tasks are finished
@@ -276,6 +280,7 @@ contains
       call func(Nfun,task,Nres,result)
       ! Send results
       call MPI_SEND(result, Nres, MPI_DOUBLE_COMPLEX, 0, tag, MPI_COMM_WORLD, ierr)
+      call check_error(ierr)
     end do
   end subroutine receive_tasks
 end subroutine task_farm
@@ -366,6 +371,7 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
     do i=1,size-1
       ! Receive results
       call MPI_RECV(buffer, Nres*Ntasks, MPI_DOUBLE_COMPLEX, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call check_error(ierr)
       ! Get number of process
       source = status(MPI_SOURCE)
       ! Save results
@@ -376,6 +382,7 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   else
     ! Send results to root
     call MPI_SEND(results, Nres*Ntasks, MPI_DOUBLE_COMPLEX, 0, 0, MPI_COMM_WORLD, ierr)
+    call check_error(ierr)
   end if
 
   ! Broadcast results so all processes have same results
@@ -525,4 +532,25 @@ subroutine progress(percent, start)
     int(remaining)/3600, mod(int(remaining)/60,60)
   call flush(OUTPUT_UNIT)
 end subroutine progress
+
+subroutine check_error(ierr)
+  implicit none
+  integer :: ierr
+  select case (ierr)
+#ifdef VERBOSE
+  case (MPI_SUCCESS)
+    print *, 'MPI_SUCCESS'
+#endif
+  case (MPI_ERR_COMM)
+    print *, 'MPI_ERR_COMM'
+  case (MPI_ERR_TYPE)
+    print *, 'MPI_ERR_TYPE'
+  case (MPI_ERR_COUNT)
+    print *, 'MPI_ERR_COUNT'
+  case (MPI_ERR_TAG)
+    print *, 'MPI_ERR_TAG'
+  case (MPI_ERR_RANK)
+    print *, 'MPI_ERR_RANK'
+  end select
+end subroutine check_error
 end module parallel_tasks
