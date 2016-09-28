@@ -369,7 +369,7 @@ subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   RESTYPE, intent(out) :: results(Nres,Ntasks)
   integer, intent(out) :: ierr
   character(len=*), optional, intent(in) :: fname
-  integer :: i, j, size, rank, source, status(MPI_STATUS_SIZE)
+  integer :: i, i1, j, size, rank, source, status(MPI_STATUS_SIZE)
   real(dp) :: start
   FUNTYPE :: task(Nfun,Nvec)
   RESTYPE :: result(Nres,Nvec), buffer(Nres,Ntasks)
@@ -383,12 +383,13 @@ subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
 
   ! Divide tasks
-  do i=1+rank,Ntasks,size*Nvec
-    task = tasks(:,i:i+Nvec-1)
+  do i=1+rank*Nvec,Ntasks,size*Nvec
+    i1 = min(i+Nvec-1, Ntasks)
+    task = tasks(:,i:i1)
     ! Do task
-    call func(Nfun,task,Nres,result,Nvec)
+    call func(Nfun,task,Nres,result,i1-i+1)
     ! Save result
-    results(:,i:i+Nvec-1) = result
+    results(:,i:i1) = result(:,1:i1-i+1)
     ! Write result
     if (sequential) call seq_write(Nfun,Nres,Nvec,task,result,fname)
     ! Show progress bar
@@ -397,15 +398,16 @@ subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
 
   ! Merge results
   if (rank.eq.0) then
-    do i=1,size-1
+    do j=1,size-1
       ! Receive results
       call MPI_RECV(buffer, Nres*Ntasks, MPIRESTYPE, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
       call check_error(ierr)
       ! Get number of process
       source = status(MPI_SOURCE)
       ! Save results
-      do j=1+source,Ntasks,size*Nvec
-        results(:,j:j+Nvec-1) = buffer(:,j:j+Nvec-1)
+      do i=1+source*Nvec,Ntasks,size*Nvec
+        i1 = min(i+Nvec-1, Ntasks)
+        results(:,i:i1) = buffer(:,i:i1)
       end do
     end do
   else
