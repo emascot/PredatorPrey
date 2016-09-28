@@ -29,28 +29,32 @@ program main
   use constants
   use parallel_tasks
   implicit none
-  intrinsic :: cmplx, real, aimag, abs
+  ! Start, wall, and cpu time
+  real(dp) :: start, elapsed, total
+  ! Find minimum velocity
+  real(dp) :: find_min_vel
   ! Position as time vs velocity
   complex(dp) :: position(nsteps+1,nvel)
-  ! Time iterator
-  integer :: it
-  ! Velocity iterator
-  integer :: ivel
-  ! Velocities
+  ! Time and velocity iterator
+  integer :: it, ivel
+  ! Velocity array
   real(dp) :: velocities(nvel)
   ! Calculate position at each iteration
   external :: chase
-  ! MPI Error status
-  integer :: ierr
+  ! MPI ID and error status
+  integer :: rank, size, ierr
 
   call mpi_init(ierr)
+  call mpi_comm_rank(mpi_comm_world,rank,ierr)
+  call mpi_comm_size(mpi_comm_world,size,ierr)
+  start = mpi_wtime()
 
   ! Find minimum velocity
-  call find_min_vel
+  if (rank.eq.0) write(*,*) 'Minimum Velocity:', find_min_vel()
 
   ! Array of test velocities
   do ivel = 0,nvel-1
-    ! Velocities ranging from 1 to 2
+    ! Velocities ranging from min to max
     velocities(ivel+1) = min_vel + (max_vel-min_vel) * ivel / real(nvel-1, dp)
   enddo
 
@@ -66,7 +70,7 @@ program main
   open(11, file='x.txt', status='replace')
   open(12, file='y.txt', status='replace')
   open(13, file='data.txt', status='replace')
-  write(13,*) '  Velocity                  Time                      x                         y'
+  write(13,'(3X,A,18X,A,22X,A,25X,A)') 'Velocity', 'Time', 'x', 'y'
   do it=1,nsteps+1
     write(10,*) (it-1) * tstep
     write(11,*) real(position(it,:))
@@ -81,6 +85,13 @@ program main
   close(13)
 #endif
 
+  elapsed = MPI_Wtime() - start
+  call MPI_Reduce(elapsed, total, 1, MPI_REAL8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+  if (rank.eq.0) then
+    write(*,*) '   p:', size
+    write(*,*) ' CPU:', total
+    write(*,*) 'Wall:', elapsed
+  endif
   call mpi_finalize(ierr)
 end program main
 
@@ -118,7 +129,7 @@ subroutine chase(ndim,velocity,nfun,position)
 end subroutine chase
 
 ! Converge onto minimum velocity
-subroutine find_min_vel
+real(dp) function find_min_vel()
   use constants
   implicit none
   ! Command line argument
@@ -132,7 +143,7 @@ subroutine find_min_vel
   ! Current maximum velocity
   real(dp) :: max = max_vel
   ! Current velocity
-  real(dp) :: velocity
+  real(dp) :: velocity = max_vel
   ! Predator catches prey test function
   logical :: will_catch
 
@@ -154,17 +165,24 @@ subroutine find_min_vel
     endif
     if (abs(min - max) < 5.0e-16) exit
   enddo
-  print *, velocity
-end subroutine find_min_vel
+  find_min_vel = velocity
+end function find_min_vel
 
 ! Return true if fast enough to catch prey
 logical function will_catch(velocity)
   use constants
   implicit none
   real(dp), intent(in) :: velocity
+  ! Time iterator
   integer :: it
+  ! Time
   real(dp) :: time
-  complex(dp) :: prey_position, position, diff
+  ! Current position
+  complex(dp) :: position
+  ! Target position
+  complex(dp) :: prey_position
+  ! Difference in positions
+  complex(dp) :: diff
 
   will_catch = .false.
   position = cmplx(0.d0, 10.d0, dp)
