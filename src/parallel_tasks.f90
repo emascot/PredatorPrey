@@ -71,7 +71,8 @@ module parallel_tasks
   logical :: bcast=.false.
   save
   private
-  public :: task_manager, task_divide, task_farm, stream, sequential, prog_bar
+  public :: task_manager, task_divide, task_farm,&
+            stream, sequential, prog_bar, bcast
 contains
 
 
@@ -123,9 +124,9 @@ contains
 !> \author Eric Mascot
 !==============================================================
 
-subroutine task_manager(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
+subroutine task_manager(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   implicit none
-  integer, intent(in) :: Ntasks, Nfun, Nres
+  integer, intent(in) :: Ntasks, Nfun, Nres, Nvec
   FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
   external :: func
   RESTYPE, intent(out) :: results(Nres,Ntasks)
@@ -138,9 +139,9 @@ subroutine task_manager(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
 
   ! For small number of processes, use all processes for tasks
   if (size.lt.8) then
-    call task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
+    call task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   else
-    call task_farm(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
+    call task_farm(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   end if
 end subroutine task_manager
 
@@ -193,9 +194,9 @@ end subroutine task_manager
 !> \author Eric Mascot
 !==============================================================
 
-subroutine task_farm(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
+subroutine task_farm(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   implicit none
-  integer, intent(in) :: Ntasks, Nfun, Nres
+  integer, intent(in) :: Ntasks, Nfun, Nres, Nvec
   FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
   external :: func
   RESTYPE, intent(out) :: results(Nres,Ntasks)
@@ -231,59 +232,82 @@ contains
 
   subroutine assign_tasks
     implicit none
-    integer :: i, tag, source, status(MPI_STATUS_SIZE)
-    RESTYPE :: buffer(Nres)
+    integer :: i, i0, i1, tag, source, status(MPI_STATUS_SIZE)
+    RESTYPE :: buffer(Nres,Nvec)
 
     ! Assign processes first task
     do i=1,size-1
-      call MPI_SEND(tasks(:,i), Nfun, MPIFUNTYPE, i, i, MPI_COMM_WORLD, ierr)
+      i0 = min(1+(i-1)*Nvec, Ntasks)
+      i1 = min(i*Nvec, Ntasks)
+      call MPI_SEND(tasks(:,i0:i1), Nfun, MPIFUNTYPE, i, i, MPI_COMM_WORLD, ierr)
     end do
 
     ! Assign rest of tasks
-    do i=size,Ntasks+size-1
+    do while (1+(i-1)*Nvec .le. Ntasks)
       ! Wait for process to finish
-      call MPI_RECV(buffer, Nres, MPIRESTYPE, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call MPI_RECV(buffer, Nres*Nvec, MPIRESTYPE, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
       call check_error(ierr)
       ! Get number of process
       source = status(MPI_SOURCE)
       ! Get number of task
       tag = status(MPI_TAG)
       ! Save result
-      results(:,tag) = buffer
+      i0 = 1+(tag-1)*Nvec
+      i1 = tag*Nvec
+      results(:,i0:i1) = buffer
       ! Write result
-      if (sequential) call seq_write(Nfun,Nres,tasks(:,tag),results(:,tag),fname)
+      if (sequential) call seq_write(Nfun,Nres,Nvec,tasks(:,i0:i1),buffer,fname)
       ! Show progress bar
-      if (prog_bar) call progress(real(i-size+1,dp)/real(Ntasks,dp), start)
-      if (i .le. Ntasks) then
-        ! Send process next task
-        call MPI_SEND(tasks(:,i), Nfun, MPIFUNTYPE, source, i, MPI_COMM_WORLD, ierr)
-        call check_error(ierr)
-      else
-        ! Send finish signal to process
-        call MPI_SEND(tasks(:,1), Nfun, MPIFUNTYPE, source, i, MPI_COMM_WORLD, ierr)
-        call check_error(ierr)
-      end if
+      if (prog_bar) call progress(real(i+1-size,dp)/real(1+(Ntasks-1)/Nvec,dp), start)
+      ! Send process next task
+      i0 = 1+(i-1)*Nvec
+      i1 = i*Nvec
+      call MPI_SEND(tasks(:,i0:i1), Nfun, MPIFUNTYPE, source, i, MPI_COMM_WORLD, ierr)
+      call check_error(ierr)
+      i = i + 1
+    end do
+
+    ! Receive last results and send finish signal
+    do i=1,size-1
+      ! Wait for process to finish
+      call MPI_RECV(buffer, Nres*Nvec, MPIRESTYPE, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call check_error(ierr)
+      ! Get number of process
+      source = status(MPI_SOURCE)
+      ! Get number of task
+      tag = status(MPI_TAG)
+      ! Save result
+      i0 = 1+(tag-1)*Nvec
+      i1 = min(tag*Nvec, Ntasks)
+      results(:,i0:i1) = buffer(:,1:i1-i0+1)
+      ! Write result
+      if (sequential) call seq_write(Nfun,Nres,Nvec,tasks(:,i0:i1),buffer,fname)
+      ! Show progress bar
+      if (prog_bar) call progress(real(i+2-size+(Ntasks-1)/Nvec,dp)/real(1+(Ntasks-1)/Nvec,dp), start)
+      ! Send finish signal to process
+      call MPI_SEND(tasks(:,1:Nvec), Nfun, MPIFUNTYPE, source, 0, MPI_COMM_WORLD, ierr)
+      call check_error(ierr)
     end do
   end subroutine assign_tasks
 
   subroutine receive_tasks
     implicit none
     integer :: tag, status(MPI_STATUS_SIZE)
-    FUNTYPE :: task(Nfun)
-    RESTYPE :: result(Nres)
+    FUNTYPE :: task(Nfun,Nvec)
+    RESTYPE :: result(Nres,Nvec)
 
     do
       ! Receive task
-      call MPI_RECV(task, Nfun, MPIFUNTYPE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
+      call MPI_RECV(task, Nfun*Nvec, MPIFUNTYPE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, status, ierr)
       call check_error(ierr)
       ! Get number of task
       tag = status(MPI_TAG)
       ! Exit if all tasks are finished
-      if (tag.gt.Ntasks) exit
+      if (tag.eq.0) exit
       ! Do task
-      call func(Nfun,task,Nres,result)
+      call func(Nfun,task,Nres,result,Nvec)
       ! Send results
-      call MPI_SEND(result, Nres, MPIRESTYPE, 0, tag, MPI_COMM_WORLD, ierr)
+      call MPI_SEND(result, Nres*Nvec, MPIRESTYPE, 0, tag, MPI_COMM_WORLD, ierr)
       call check_error(ierr)
     end do
   end subroutine receive_tasks
@@ -337,9 +361,9 @@ end subroutine task_farm
 !> \author Eric Mascot
 !==============================================================
 
-subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
+subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   implicit none
-  integer, intent(in) :: Ntasks, Nfun, Nres
+  integer, intent(in) :: Ntasks, Nfun, Nres, Nvec
   FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
   external :: func
   RESTYPE, intent(out) :: results(Nres,Ntasks)
@@ -347,8 +371,8 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   character(len=*), optional, intent(in) :: fname
   integer :: i, j, size, rank, source, status(MPI_STATUS_SIZE)
   real(dp) :: start
-  FUNTYPE :: task(Nfun)
-  RESTYPE :: result(Nres), buffer(Nres,Ntasks)
+  FUNTYPE :: task(Nfun,Nvec)
+  RESTYPE :: result(Nres,Nvec), buffer(Nres,Ntasks)
 
   ! Start timer
   start = MPI_Wtime()
@@ -359,14 +383,14 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
   call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
 
   ! Divide tasks
-  do i=1+rank,Ntasks,size
-    task = tasks(:,i)
+  do i=1+rank,Ntasks,size*Nvec
+    task = tasks(:,i:i+Nvec-1)
     ! Do task
-    call func(Nfun,task,Nres,result)
+    call func(Nfun,task,Nres,result,Nvec)
     ! Save result
-    results(:,i) = result
+    results(:,i:i+Nvec-1) = result
     ! Write result
-    if (sequential) call seq_write(Nfun,Nres,task,result,fname)
+    if (sequential) call seq_write(Nfun,Nres,Nvec,task,result,fname)
     ! Show progress bar
     if (prog_bar) call progress(real(i,dp)/real(Ntasks,dp), start)
   end do
@@ -380,8 +404,8 @@ subroutine task_divide(Ntasks,Nfun,Nres,tasks,func,results,ierr,fname)
       ! Get number of process
       source = status(MPI_SOURCE)
       ! Save results
-      do j=1+source,Ntasks,size
-        results(:,j) = buffer(:,j)
+      do j=1+source,Ntasks,size*Nvec
+        results(:,j:j+Nvec-1) = buffer(:,j:j+Nvec-1)
       end do
     end do
   else
@@ -418,12 +442,12 @@ end subroutine task_divide
 !> \author Eric Mascot
 !==============================================================
 
-subroutine seq_write(Nfun,Nres,task,result,fname)
-  integer, intent(in) :: Nfun, Nres
-  FUNTYPE, intent(in) :: task(Nfun)
-  RESTYPE, intent(in) :: result(Nres)
+subroutine seq_write(Nfun,Nres,Nvec,task,result,fname)
+  integer, intent(in) :: Nfun, Nres, Nvec
+  FUNTYPE, intent(in) :: task(Nfun,Nvec)
+  RESTYPE, intent(in) :: result(Nres,Nvec)
   character(len=*), optional, intent(in) :: fname
-  integer :: rank, ierr
+  integer :: i, rank, ierr
   character(len=64) :: fname_MPI
 
   ! Stop if sequential writing turned off
@@ -439,12 +463,16 @@ subroutine seq_write(Nfun,Nres,task,result,fname)
   if (stream) then
     ! Write as unformatted data
     open(10, file=fname_MPI, access='append',form='unformatted')
-      write(10) task(:), result(:)
+      do i=1,Nvec
+        write(10) task(:,i), result(:,i)
+      end do
     close(10)
   else
     ! Write as human readable data
     open(10, file=fname_MPI, access='append')
-      write(10,*) task(:), result(:)
+      do i=1,Nvec
+        write(10) task(:,i), result(:,i)
+      end do
     close(10)
   end if
 end subroutine seq_write
