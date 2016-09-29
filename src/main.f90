@@ -61,9 +61,9 @@ program main
   if (len_trim(cmd) > 0) read(cmd, *) nvec
 
   ! Array of test velocities
-  do ivel = 0,nvel-1
+  do ivel = 1,nvel
     ! Velocities ranging from min to max
-    velocities(ivel+1) = min_vel + (max_vel-min_vel) * ivel / real(nvel-1, dp)
+    velocities(ivel) = min_vel + (max_vel-min_vel) * (ivel-1) / real(nvel-1, dp)
   enddo
 
 #ifdef VERBOSE
