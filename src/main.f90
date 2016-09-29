@@ -202,6 +202,8 @@ real(dp) function catch_time(velocity)
   complex(dp) :: prey_position
   ! Difference in positions
   complex(dp) :: diff
+  ! Distance between position and target
+  real(dp) :: dist
 
   catch_time = 0._dp
   position = cmplx(0.d0, 10.d0, dp)
@@ -211,13 +213,14 @@ real(dp) function catch_time(velocity)
     prey_position = cmplx(prey_vel * time, 0.d0, dp)
     ! Aim towards prey
     diff = prey_position - position
+    dist = abs(diff)
     ! Check if within reach
-    if (abs(diff) < velocity * tstep + range) then
+    if (dist < velocity * tstep + range) then
       catch_time = time
       return
     else
       ! Move towards prey
-      position = position + velocity * tstep * diff / abs(diff)
+      position = position + velocity * tstep * diff / dist
     endif
   enddo
 end function catch_time
