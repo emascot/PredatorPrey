@@ -258,7 +258,7 @@ contains
       ! Write result
       if (sequential) call seq_write(Nfun,Nres,Nvec,tasks(:,i0:i1),buffer,fname)
       ! Show progress bar
-      if (prog_bar) call progress(real(i+1-size,dp)/real(1+(Ntasks-1)/Nvec,dp), start)
+      if (prog_bar) call progress(i+1-size, 1+(Ntasks-1)/Nvec, start)
       ! Send process next task
       i0 = 1+(i-1)*Nvec
       i1 = i*Nvec
@@ -283,7 +283,7 @@ contains
       ! Write result
       if (sequential) call seq_write(Nfun,Nres,Nvec,tasks(:,i0:i1),buffer,fname)
       ! Show progress bar
-      if (prog_bar) call progress(real(i+2-size+(Ntasks-1)/Nvec,dp)/real(1+(Ntasks-1)/Nvec,dp), start)
+      if (prog_bar) call progress(i+2-size+(Ntasks-1)/Nvec, 1+(Ntasks-1)/Nvec, start)
       ! Send finish signal to process
       call MPI_SEND(tasks(:,1:Nvec), Nfun, MPIFUNTYPE, source, 0, MPI_COMM_WORLD, ierr)
       call check_error(ierr)
@@ -393,7 +393,7 @@ subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
     ! Write result
     if (sequential) call seq_write(Nfun,Nres,Nvec,task,result,fname)
     ! Show progress bar
-    if (prog_bar) call progress(real(i,dp)/real(Ntasks,dp), start)
+    if (prog_bar) call progress(i, Ntasks, start)
   end do
 
   ! Merge results
@@ -544,22 +544,24 @@ end subroutine export
 !> \author Eric Mascot
 !==============================================================
 
-subroutine progress(percent, start)
+subroutine progress(i,imax,start)
   use iso_fortran_env
   implicit none
   integer, parameter :: w=30
-  real(dp), intent(in) :: percent, start
+  integer, intent(in) :: i, imax
+  real(dp), intent(in) :: start
   integer :: ticks
-  real(dp) :: elapsed, remaining
+  real(dp) :: percent, elapsed, remaining
   character(len=w+2) :: bar
 
-  ticks = int(percent*w)
-  if (ticks>w) ticks=w
-  if (ticks<0) ticks=0
+  ticks = w*i/imax
+  if (ticks > w) ticks = w
+  if (ticks < 0) ticks = 0
 
-  elapsed   = MPI_Wtime()-start
+  percent = real(i,dp)/real(imax,dp)
+  elapsed = MPI_Wtime()-start
   remaining = int(elapsed*(1.0/percent-1.0))
-  bar  = "["//repeat("=",ticks)//repeat(" ",w-ticks)//"]"
+  bar = "["//repeat("=",ticks)//repeat(" ",w-ticks)//"]"
   
   write(OUTPUT_UNIT,"(A,I3,'% ',I4,':',I2.2,' elapsed',I4,':',I2.2,' remaining')") &
     bar, int(percent*100), &
