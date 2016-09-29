@@ -4,7 +4,7 @@ module constants
   ! Double precision
   integer, parameter :: dp = kind(0.d0)
   ! Total number of test velocities
-  integer, parameter :: nvel = 100
+  integer, parameter :: nvel = 101
   ! Total number of time steps
   integer, parameter :: nsteps = 1000
   ! Total amount of time
@@ -29,14 +29,18 @@ program main
   use constants
   use parallel_tasks
   implicit none
+  ! MPI ID, size, and error status
+  integer :: rank, size, ierr
+  ! Start, wall, and cpu time
+  real(dp) :: start, elapsed, total
   ! Command line argument
   character(len=32) :: cmd
   ! Granularity
   integer :: nvec = 1
-  ! Start, wall, and cpu time
-  real(dp) :: start, elapsed, total
   ! Find minimum velocity
   real(dp) :: find_min_vel
+  ! Find time of catch
+  real(dp) :: catch_time
   ! Position as time vs velocity
   complex(dp) :: position(nsteps+1,nvel)
   ! Time and velocity iterator
@@ -45,8 +49,6 @@ program main
   real(dp) :: velocities(nvel)
   ! Calculate position at each iteration
   external :: chase
-  ! MPI ID and error status
-  integer :: rank, size, ierr
 
   call mpi_init(ierr)
   call mpi_comm_rank(mpi_comm_world,rank,ierr)
@@ -79,20 +81,26 @@ program main
   open(10, file='t.txt', status='replace')
   open(11, file='x.txt', status='replace')
   open(12, file='y.txt', status='replace')
-  open(13, file='data.txt', status='replace')
-  write(13,'(3X,A,18X,A,22X,A,25X,A)') 'Velocity', 'Time', 'x', 'y'
   do it=1,nsteps+1
     write(10,*) (it-1) * tstep
     write(11,*) real(position(it,:))
     write(12,*) aimag(position(it,:))
-    do ivel=1,nvel
-      write(13,*) velocities(ivel), (it-1) * tstep, real(position(it,ivel)), aimag(position(it,ivel))
-    enddo
   enddo
   close(10)
   close(11)
   close(12)
+
+  open(13, file='data.txt', status='replace')
+  open(14, file='tf.txt', status='replace')
+  write(13,'(3X,A,18X,A,22X,A,25X,A)') 'Velocity', 'Time', 'x', 'y'
+  do ivel=1,nvel
+    do it=1,nsteps+1
+      write(13,*) velocities(ivel), (it-1) * tstep, real(position(it,ivel)), aimag(position(it,ivel))
+    enddo
+    write(14,*) velocities(ivel), catch_time(velocities(ivel))
+  enddo
   close(13)
+  close(14)
 #endif
 
   elapsed = MPI_Wtime() - start
@@ -173,6 +181,15 @@ end function find_min_vel
 
 ! Return true if fast enough to catch prey
 logical function will_catch(velocity)
+  implicit none
+  integer, parameter :: dp = kind(0.d0)
+  real(dp), intent(in) :: velocity
+  real(dp) :: catch_time
+  will_catch = (catch_time(velocity) > 0.d0)
+end function will_catch
+
+! Return time when prey is caught
+real(dp) function catch_time(velocity)
   use constants
   implicit none
   real(dp), intent(in) :: velocity
@@ -187,7 +204,7 @@ logical function will_catch(velocity)
   ! Difference in positions
   complex(dp) :: diff
 
-  will_catch = .false.
+  catch_time = 0._dp
   position = cmplx(0.d0, 10.d0, dp)
   do it = 1,nsteps
     ! Find prey
@@ -197,11 +214,11 @@ logical function will_catch(velocity)
     diff = prey_position - position
     ! Check if within reach
     if (abs(diff) < velocity * tstep + range) then
-      will_catch = .true.
+      catch_time = time
       return
     else
       ! Move towards prey
       position = position + velocity * tstep * diff / abs(diff)
     endif
   enddo
-end function will_catch
+end function catch_time
