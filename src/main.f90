@@ -68,6 +68,7 @@ program main
   enddo
 
 #ifdef VERBOSE
+  ! Show progress bar
   prog_bar = .true.
 #endif
 

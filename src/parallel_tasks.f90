@@ -67,7 +67,7 @@ module parallel_tasks
   ! false - Do not show progress
   logical :: prog_bar=.false.
   ! true  - Broadcast results
-  ! false - Root has results
+  ! false - Only root has results
   logical :: bcast=.false.
   save
   private
