@@ -4,8 +4,8 @@
 # make E=1
 
 FC = mpifort
-FFLAGS = -O3 -g -Jobj -Wall -cpp $(if $V,-DVERBOSE) $(if $E,-DEXPORT)
-LIB = 
+FFLAGS = -O3 -g -Jobj -Wall -cpp $(if $V,-DVERBOSE )$(if $E,-DEXPORT)
+LIB =
 FILES = parallel_tasks.f90 main.f90
 SRC = $(FILES:%=src/%)
 OBJ = $(FILES:%.f90=obj/%.o)
