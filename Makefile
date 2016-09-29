@@ -3,7 +3,7 @@
 # Export
 # make E=1
 
-FC = mpifort
+FC = mpif90
 FFLAGS = -O3 -g -Jobj -Wall -cpp $(if $V,-DVERBOSE )$(if $E,-DEXPORT)
 LIB =
 FILES = parallel_tasks.f90 main.f90
