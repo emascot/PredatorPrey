@@ -60,9 +60,6 @@ program main
   ! Convert to integer
   if (len_trim(cmd) > 0) read(cmd, *) nvec
 
-  ! Find minimum velocity
-  if (rank.eq.0) write(*,*) 'Minimum Velocity:', find_min_vel()
-
   ! Array of test velocities
   do ivel = 0,nvel-1
     ! Velocities ranging from min to max
@@ -70,6 +67,8 @@ program main
   enddo
 
 #ifdef VERBOSE
+  ! Find minimum velocity
+  if (rank.eq.0) write(*,*) 'Minimum Velocity:', find_min_vel()
   ! Show progress bar
   prog_bar = .true.
 #endif
