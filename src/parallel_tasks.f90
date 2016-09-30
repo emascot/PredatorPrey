@@ -5,7 +5,7 @@
 
 !==============================================================
 !> Distribute tasks to processes.
-!> Tasks are an array of real(8) sent to a subroutine.
+!> Tasks are an array of FUNTYPE sent to a subroutine.
 !> |option    |description                                |
 !> |----------|-------------------------------------------|
 !> |stream    |Write output as byte stream instead of text|
@@ -480,16 +480,16 @@ subroutine seq_write(Nfun,Nres,Nvec,task,result,fname)
   ! Export data to file
   if (stream) then
     ! Write as unformatted data
-    open(10, file=fname_MPI, access='append',form='unformatted')
+    open(10, file=fname_MPI, position='append', form='unformatted')
       do i=1,Nvec
         write(10) task(:,i), result(:,i)
       end do
     close(10)
   else
     ! Write as human readable data
-    open(10, file=fname_MPI, access='append')
+    open(10, file=fname_MPI, position='append')
       do i=1,Nvec
-        write(10) task(:,i), result(:,i)
+        write(10,*) task(:,i), result(:,i)
       end do
     close(10)
   end if
@@ -583,23 +583,25 @@ subroutine progress(i,imax,start)
     bar, int(percent*100), &
     int(elapsed)/3600, mod(int(elapsed)/60,60), &
     int(remaining)/3600, mod(int(remaining)/60,60)
-  call flush(OUTPUT_UNIT)
+  flush(OUTPUT_UNIT)
 end subroutine progress
 
 subroutine check_error(ierr)
+  use iso_fortran_env
   implicit none
   integer :: ierr
   select case (ierr)
   case (MPI_ERR_COMM)
-    print *, 'MPI_ERR_COMM'
+    write(ERROR_UNIT,*) 'MPI_ERR_COMM'
   case (MPI_ERR_TYPE)
-    print *, 'MPI_ERR_TYPE'
+    write(ERROR_UNIT,*) 'MPI_ERR_TYPE'
   case (MPI_ERR_COUNT)
-    print *, 'MPI_ERR_COUNT'
+    write(ERROR_UNIT,*) 'MPI_ERR_COUNT'
   case (MPI_ERR_TAG)
-    print *, 'MPI_ERR_TAG'
+    write(ERROR_UNIT,*) 'MPI_ERR_TAG'
   case (MPI_ERR_RANK)
-    print *, 'MPI_ERR_RANK'
+    write(ERROR_UNIT,*) 'MPI_ERR_RANK'
   end select
+  flush(ERROR_UNIT)
 end subroutine check_error
 end module parallel_tasks
