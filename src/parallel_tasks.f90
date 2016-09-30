@@ -3,6 +3,7 @@
 #define MPIFUNTYPE MPI_REAL8
 #define MPIRESTYPE MPI_DOUBLE_COMPLEX
 
+!==============================================================
 !> Distribute tasks to processes.
 !> Tasks are an array of real(8) sent to a subroutine.
 !> |option    |description                                |
@@ -10,7 +11,8 @@
 !> |stream    |Write output as byte stream instead of text|
 !> |sequential|Write after each task is completed         |
 !> |prog_bar  |Show a progress bar with estimated time    |
-!> \date July 2016
+!> |bcast     |Send results to all processes              |
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 !> \par Example code:
@@ -19,7 +21,7 @@
 !>   use mpi
 !>   use parallel_tasks
 !>   implicit none
-!>   integer, parameter :: Ntasks=10, Nfun=2, Nres=2, dp=kind(0.d0)
+!>   integer, parameter :: Ntasks=10, Nfun=2, Nres=2, Nvec=1, dp=kind(0.d0)
 !>   real(dp) :: tasks(Nfun,Ntasks), results(Nres,Ntasks)
 !>   integer :: ierr
 !> 
@@ -33,7 +35,7 @@
 !>   prog_bar = .true.
 !>
 !>   ! Assign tasks and write results to "example.dat"
-!>   call task_manager(Ntasks,Nfun,Nres,tasks,sum_prod,results,ierr,"example.dat")
+!>   call task_manager(Ntasks,Nfun,Nres,Nvec,tasks,sum_prod,results,ierr,"example.dat")
 !> 
 !>   ! Finalize MPI
 !>   call MPI_FINALIZE(ierr)
@@ -41,13 +43,17 @@
 !> contains
 !>
 !>   ! Define task
-!>   subroutine sum_prod(Nfun,fun,Nres,res)
-!>     integer, intent(in) :: Nfun, Nres
-!>     real(dp), intent(in) :: fun(Nfun)
-!>     real(dp), intent(out) :: res(Nres)
-!> 
-!>     res(1) = fun(1) + fun(2)
-!>     res(2) = fun(1) * fun(2)
+!>   subroutine sum_prod(Nfun,fun,Nres,res,Nvec)
+!>     integer, intent(in) :: Nfun, Nres, Nvec
+!>     real(dp), intent(in) :: fun(Nfun,Nvec)
+!>     real(dp), intent(out) :: res(Nres,Nvec)
+!>     integer :: iv, if
+!>     do iv=1,Nvec
+!>       do if=1,Nfun
+!>         res(1,iv) = fun(if,iv) + fun(if,iv)
+!>         res(2,iv) = fun(if,iv) * fun(if,iv)
+!>       enddo
+!>     enddo
 !>   end subroutine sum_prod
 !> end program example
 !> \endcode
@@ -71,7 +77,7 @@ module parallel_tasks
   logical :: bcast=.false.
   save
   private
-  public :: task_manager, task_divide, task_farm,&
+  public :: task_manager, task_static, task_dynamic,&
             stream, sequential, prog_bar, bcast
 contains
 
@@ -84,10 +90,12 @@ contains
 !
 !> \param[in]  Ntasks  Number of tasks \n
 !>                     Size of tasks array
-!> \param[in]  Nfun    Number of function Arguments \n
+!> \param[in]  Nfun    Number of function arguments \n
 !>                     Size of arguments array for subroutine "func"
 !> \param[in]  Nres    Number of results \n
 !>                     Size of results array from subroutine "func"
+!> \param[in]  Nvec    Size of vector \n
+!>                     Number of tasks to do at a time
 !> \param[in]  tasks   Array of function inputs \n
 !>                     Arguments to use for subroutine "func"
 !> \param[in]  func    externally declared subroutine to calculate tasks \n
@@ -120,7 +128,7 @@ contains
 !> \param[in] fname    Filename of output \n
 !>                     Skips if fname is not provided \n
 !>                     File has first columns as tasks and last columns as results
-!> \date July 2016
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 
@@ -139,19 +147,19 @@ subroutine task_manager(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
 
   ! For small number of processes, use static load balancing
   if (size.lt.3) then
-    call task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+    call task_static(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   else
 #ifdef STATIC
-    call task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+    call task_static(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
 #else
-    call task_farm(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+    call task_dynamic(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
 #endif
   end if
 end subroutine task_manager
 
 
 !==============================================================
-!  task_farm
+!  task_dynamic
 !> Assigns a new task to a process when process finishes task.
 !> Takes an array of inputs (tasks) and passes it through
 !> an externally declared subroutine (func).
@@ -162,6 +170,8 @@ end subroutine task_manager
 !>                     Size of arguments array for subroutine "func"
 !> \param[in]  Nres    Number of results \n
 !>                     Size of results array from subroutine "func"
+!> \param[in]  Nvec    Size of vector \n
+!>                     Number of tasks to do at a time
 !> \param[in]  tasks   Array of function inputs \n
 !>                     Arguments to use for subroutine "func"
 !> \param[in]  func    externally declared subroutine to calculate tasks \n
@@ -194,11 +204,11 @@ end subroutine task_manager
 !> \param[in] fname    Filename of output \n
 !>                     Skips if fname is not provided \n
 !>                     File has first columns as tasks and last columns as results
-!> \date July 2016
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 
-subroutine task_farm(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+subroutine task_dynamic(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   implicit none
   integer, intent(in) :: Ntasks, Nfun, Nres, Nvec
   FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
@@ -315,10 +325,10 @@ contains
       call check_error(ierr)
     end do
   end subroutine receive_tasks
-end subroutine task_farm
+end subroutine task_dynamic
 
 !==============================================================
-!  task_divide
+!  task_static
 !> Assigns each process an equal number of tasks.
 !> Takes an array of inputs (tasks) and passes it through
 !> an externally declared subroutine (func).
@@ -329,6 +339,8 @@ end subroutine task_farm
 !>                     Size of arguments array for subroutine "func"
 !> \param[in]  Nres    Number of results \n
 !>                     Size of results array from subroutine "func"
+!> \param[in]  Nvec    Size of vector \n
+!>                     Number of tasks to do at a time
 !> \param[in]  tasks   Array of function inputs \n
 !>                     Arguments to use for subroutine "func"
 !> \param[in]  func    externally declared subroutine to calculate tasks \n
@@ -361,11 +373,11 @@ end subroutine task_farm
 !> \param[in] fname    Filename of output \n
 !>                     Skips if fname is not provided \n
 !>                     File has first columns as tasks and last columns as results
-!> \date July 2016
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 
-subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+subroutine task_static(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   implicit none
   integer, intent(in) :: Ntasks, Nfun, Nres, Nvec
   FUNTYPE, intent(in) :: tasks(Nfun,Ntasks)
@@ -425,7 +437,7 @@ subroutine task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
 
   ! Write to file if present
   if (present(fname)) call export(Ntasks,Nfun,Nres,tasks,results,fname)
-end subroutine task_divide
+end subroutine task_static
 
 
 !==============================================================
@@ -444,7 +456,7 @@ end subroutine task_divide
 !> \param[in]  fname   Filename of output \n
 !>                     Skips if fname is not provided \n
 !>                     File has first columns as tasks and last columns as results
-!> \date July 2016
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 
@@ -501,7 +513,7 @@ end subroutine seq_write
 !> \param[in]  fname   Filename of output \n
 !>                     Skips if fname is not provided \n
 !>                     File has first columns as tasks and last columns as results
-!> \date July 2016
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 
@@ -544,7 +556,7 @@ end subroutine export
 !
 !> \param[in]  percent Percent completed
 !> \param[in]  start   Time of start from system_clock
-!> \date July 2016
+!> \date September 2016
 !> \author Eric Mascot
 !==============================================================
 
