@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 
 nprocs = 6
 ngrain = 5
-procs = np.array([2**n for n in range(nprocs)])
-grain = np.array([4**n for n in range(ngrain)])
+procs = 2**np.arange(nprocs)
+grain = 4**np.arange(ngrain)
 walltime = np.zeros((nprocs,ngrain))
 for ip in range(nprocs):
 	for ivec in range(ngrain):
