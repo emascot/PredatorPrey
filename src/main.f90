@@ -99,7 +99,8 @@ program main
   write(13,'(3X,A,18X,A,22X,A,25X,A)') 'Velocity', 'Time', 'x', 'y'
   do ivel=1,nvel
     do it=1,nsteps+1
-      write(13,*) velocities(ivel), (it-1) * tstep, real(positions(it,ivel)), aimag(positions(it,ivel))
+      write(13,*) velocities(ivel), (it-1) * tstep, &
+        real(positions(it,ivel)), aimag(positions(it,ivel))
     enddo
     write(14,*) velocities(ivel), real(times(ivel))
   enddo
@@ -165,48 +166,6 @@ subroutine chase_time(ndim,velocity,nfun,time,nvec)
   enddo
 end subroutine chase_time
 
-! Converge onto minimum velocity
-real(dp) function find_min_vel()
-  use constants
-  implicit none
-  ! Number of tests
-  integer, parameter :: ntest = 1000
-  ! Test iterator
-  integer :: itest
-  ! Current minimum velocity
-  real(dp) :: min = min_vel
-  ! Current maximum velocity
-  real(dp) :: max = max_vel
-  ! Current velocity
-  real(dp) :: velocity = max_vel
-  ! Predator catches prey test function
-  logical :: will_catch
-
-  ! Repeat ntest times
-  do itest=1,ntest
-    ! Bisect range
-    velocity = (min + max) * 0.5d0
-    if (will_catch(velocity)) then
-      ! Lower maximum
-      max = velocity
-    else
-      ! Increase minimum
-      min = velocity
-    endif
-    if (abs(min - max) < 5.0e-16) exit
-  enddo
-  find_min_vel = velocity
-end function find_min_vel
-
-! Return true if fast enough to catch prey
-logical function will_catch(velocity)
-  implicit none
-  integer, parameter :: dp = kind(0.d0)
-  real(dp), intent(in) :: velocity
-  real(dp) :: catch_time
-  will_catch = (catch_time(velocity) > 0.d0)
-end function will_catch
-
 ! Return time when prey is caught
 real(dp) function catch_time(velocity)
   use constants
@@ -245,3 +204,35 @@ real(dp) function catch_time(velocity)
   enddo
 end function catch_time
 
+! Converge onto minimum velocity
+real(dp) function find_min_vel()
+  use constants
+  implicit none
+  ! Number of tests
+  integer, parameter :: ntest = 1000
+  ! Test iterator
+  integer :: itest
+  ! Current minimum velocity
+  real(dp) :: min = min_vel
+  ! Current maximum velocity
+  real(dp) :: max = max_vel
+  ! Current velocity
+  real(dp) :: velocity = max_vel
+  ! Get time when prey is caught
+  real(dp) :: catch_time
+
+  ! Repeat ntest times
+  do itest=1,ntest
+    ! Bisect range
+    velocity = (min + max) * 0.5d0
+    if (catch_time(velocity) > 0.d0) then
+      ! Lower maximum
+      max = velocity
+    else
+      ! Increase minimum
+      min = velocity
+    endif
+    if (abs(min - max) < 5.0e-16) exit
+  enddo
+  find_min_vel = velocity
+end function find_min_vel
