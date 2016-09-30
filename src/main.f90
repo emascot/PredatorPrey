@@ -6,7 +6,7 @@ module constants
   ! Total number of test velocities
   integer, parameter :: nvel = 1000
   ! Total number of time steps
-  integer, parameter :: nsteps = 1000
+  integer, parameter :: nsteps = 500000
   ! Total amount of time
   real(dp), parameter :: totaltime = 30.d0
   ! Time step
