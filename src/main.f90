@@ -4,7 +4,7 @@ module constants
   ! Double precision
   integer, parameter :: dp = kind(0.d0)
   ! Total number of test velocities
-  integer, parameter :: nvel = 101
+  integer, parameter :: nvel = 1000
   ! Total number of time steps
   integer, parameter :: nsteps = 1000
   ! Total amount of time
@@ -41,14 +41,18 @@ program main
   real(dp) :: find_min_vel
   ! Find time of catch
   real(dp) :: catch_time
-  ! Position as time vs velocity
-  complex(dp) :: position(nsteps+1,nvel)
   ! Time and velocity iterator
   integer :: it, ivel
   ! Velocity array
   real(dp) :: velocities(nvel)
-  ! Calculate position at each iteration
-  external :: chase
+  ! Position at each time for each velocity
+  complex(dp) :: positions(nsteps+1,nvel)
+  ! Catch time for each velocity
+  complex(dp) :: times(1,nvel)
+  ! Calculate position
+  external :: chase_trajectory
+  ! Calculate catch time
+  external :: chase_time
 
   call mpi_init(ierr)
   call mpi_comm_rank(mpi_comm_world,rank,ierr)
@@ -73,7 +77,8 @@ program main
   prog_bar = .true.
 #endif
 
-  call task_manager(nvel,1,nsteps+1,nvec,velocities,chase,position,ierr)
+  call task_manager(nvel,1,1,nvec,velocities,chase_time,times,ierr)
+  call task_manager(nvel,1,nsteps+1,nvec,velocities,chase_trajectory,positions,ierr)
 
 #ifdef EXPORT
   ! Export to file
@@ -82,8 +87,8 @@ program main
   open(12, file='y.txt', status='replace')
   do it=1,nsteps+1
     write(10,*) (it-1) * tstep
-    write(11,*) real(position(it,:))
-    write(12,*) aimag(position(it,:))
+    write(11,*) real(positions(it,:))
+    write(12,*) aimag(positions(it,:))
   enddo
   close(10)
   close(11)
@@ -94,9 +99,9 @@ program main
   write(13,'(3X,A,18X,A,22X,A,25X,A)') 'Velocity', 'Time', 'x', 'y'
   do ivel=1,nvel
     do it=1,nsteps+1
-      write(13,*) velocities(ivel), (it-1) * tstep, real(position(it,ivel)), aimag(position(it,ivel))
+      write(13,*) velocities(ivel), (it-1) * tstep, real(positions(it,ivel)), aimag(positions(it,ivel))
     enddo
-    write(14,*) velocities(ivel), catch_time(velocities(ivel))
+    write(14,*) velocities(ivel), real(times(ivel))
   enddo
   close(13)
   close(14)
@@ -110,7 +115,8 @@ program main
   call mpi_finalize(ierr)
 end program main
 
-subroutine chase(ndim,velocities,nfun,positions,nvec)
+! Calculate position at each time for given velocities
+subroutine chase_trajectory(ndim,velocities,nfun,positions,nvec)
   use constants
   implicit none
   integer, intent(in) :: ndim, nfun, nvec
@@ -143,7 +149,21 @@ subroutine chase(ndim,velocities,nfun,positions,nvec)
       endif
     enddo
   enddo
-end subroutine chase
+end subroutine chase_trajectory
+
+! Calculate catch time for given velocities
+subroutine chase_time(ndim,velocity,nfun,time,nvec)
+  use constants, only: dp
+  implicit none
+  integer, intent(in) :: ndim, nfun, nvec
+  real(dp), intent(in) :: velocity(ndim,nvec)
+  complex(dp), intent(out) :: time(nfun,nvec)
+  integer :: ivec
+  real(dp) :: catch_time
+  do ivec=1,nvec
+    time(1,ivec) = catch_time(velocity(1,ivec))
+  enddo
+end subroutine chase_time
 
 ! Converge onto minimum velocity
 real(dp) function find_min_vel()
@@ -224,3 +244,4 @@ real(dp) function catch_time(velocity)
     endif
   enddo
 end function catch_time
+
