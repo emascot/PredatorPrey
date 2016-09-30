@@ -2,9 +2,11 @@
 # make V=1
 # Export
 # make E=1
+# Static load balancing
+# make S=1
 
 FC = mpif90
-FFLAGS = -O3 -g -Jobj -Wall -cpp $(if $V,-DVERBOSE )$(if $E,-DEXPORT)
+FFLAGS = -O3 -g -Jobj -Wall -cpp $(if $V,-DVERBOSE )$(if $E,-DEXPORT)$(if $S,-DSTATIC)
 LIB =
 FILES = parallel_tasks.f90 main.f90
 SRC = $(FILES:%=src/%)

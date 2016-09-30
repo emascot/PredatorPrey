@@ -137,11 +137,15 @@ subroutine task_manager(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   ! Get number of processes
   call MPI_COMM_SIZE(MPI_COMM_WORLD,size,ierr)
 
-  ! For small number of processes, use all processes for tasks
-  if (size.lt.8) then
+  ! For small number of processes, use static load balancing
+  if (size.lt.3) then
     call task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
   else
+#ifdef STATIC
+    call task_divide(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+#else
     call task_farm(Ntasks,Nfun,Nres,Nvec,tasks,func,results,ierr,fname)
+#endif
   end if
 end subroutine task_manager
 
