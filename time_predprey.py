@@ -13,6 +13,7 @@ for ip in range(nprocs):
 		process = subprocess.Popen(args, stdout=subprocess.PIPE)
 		l = process.stdout.read().split()
 		walltime[ip,ivec] = float(l[3])
+		print procs[ip], grain[ivec], walltime[ip,ivec]
 speedup = walltime[0,0]/walltime
 
 plt.imshow(speedup,interpolation='nearest')
