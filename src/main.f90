@@ -39,8 +39,6 @@ program main
   integer :: nvec = 1
   ! Find minimum velocity
   real(dp) :: find_min_vel
-  ! Find time of catch
-  real(dp) :: catch_time
   ! Time and velocity iterator
   integer :: it, ivel
   ! Velocity array
@@ -133,7 +131,7 @@ subroutine chase_trajectory(ndim,velocities,nfun,positions,nvec)
   complex(dp) :: diff
   
   positions(1,:) = cmplx(0.d0, start_dist, dp)
-  do ivel = 1,ndim
+  do ivel = 1,nvec
     do it = 1,nsteps
       ! Find prey
       time = it * tstep
