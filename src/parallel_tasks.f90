@@ -266,16 +266,16 @@ contains
       ! Get number of task
       tag = status(MPI_TAG)
       ! Save result
-      i0 = 1+(tag-1)*Nvec
-      i1 = tag*Nvec
+      i0 = min(1+(tag-1)*Nvec, Ntasks)
+      i1 = min(tag*Nvec, Ntasks)
       results(:,i0:i1) = buffer
       ! Write result
       if (sequential) call seq_write(Nfun,Nres,Nvec,tasks(:,i0:i1),buffer,fname)
       ! Show progress bar
       if (prog_bar) call progress(i+1-size, 1+(Ntasks-1)/Nvec, start)
       ! Send process next task
-      i0 = 1+(i-1)*Nvec
-      i1 = i*Nvec
+      i0 = min(1+(i-1)*Nvec, Ntasks)
+      i1 = min(i*Nvec, Ntasks)
       call MPI_SEND(tasks(:,i0:i1), Nfun, MPIFUNTYPE, source, i, MPI_COMM_WORLD, ierr)
       call check_error(ierr)
       i = i + 1
@@ -291,7 +291,7 @@ contains
       ! Get number of task
       tag = status(MPI_TAG)
       ! Save result
-      i0 = 1+(tag-1)*Nvec
+      i0 = min(1+(tag-1)*Nvec, Ntasks)
       i1 = min(tag*Nvec, Ntasks)
       results(:,i0:i1) = buffer(:,1:i1-i0+1)
       ! Write result
