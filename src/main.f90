@@ -48,7 +48,7 @@ program main
   ! Position at each time for each velocity
   complex(dp) :: positions(nsteps+1,nvel)
   ! Catch time for each velocity
-  complex(dp) :: times(1,nvel)
+  complex(dp) :: times(nvel)
   ! Calculate position
   external :: chase_trajectory
   ! Calculate catch time
