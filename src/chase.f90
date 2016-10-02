@@ -25,7 +25,6 @@ contains
 
   ! Calculate position at each time for given velocities
   subroutine chase_trajectory(ndim,velocities,nfun,positions,nvec)
-    use constants
     implicit none
     integer, intent(in) :: ndim, nfun, nvec
     real(dp), intent(in) :: velocities(ndim,nvec)
@@ -61,7 +60,6 @@ contains
 
   ! Calculate catch time for given velocities
   subroutine chase_time(ndim,velocity,nfun,time,nvec)
-    use constants, only: dp
     implicit none
     integer, intent(in) :: ndim, nfun, nvec
     real(dp), intent(in) :: velocity(ndim,nvec)
@@ -75,7 +73,6 @@ contains
 
   ! Return time when prey is caught
   real(dp) function catch_time(velocity)
-    use constants
     implicit none
     real(dp), intent(in) :: velocity
     ! Time iterator
@@ -113,7 +110,6 @@ contains
 
   ! Converge onto minimum velocity
   real(dp) function find_min_vel()
-    use constants
     implicit none
     ! Number of tests
     integer, parameter :: ntest = 1000
